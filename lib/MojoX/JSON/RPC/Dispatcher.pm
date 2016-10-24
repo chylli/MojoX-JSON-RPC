@@ -5,6 +5,9 @@ use Mojo::JSON qw(decode_json);
 use MojoX::JSON::RPC::Dispatcher::Method;
 use MojoX::JSON::RPC::Service;
 
+use Scalar::Util qw();
+use Variable::Disposition qw();
+
 # process JSON-RPC call
 sub call {
     my ($self) = @_;
@@ -14,16 +17,36 @@ sub call {
         $self->tx->res->code(204);
         return $self->rendered;
     }
-    my $res = $self->tx->res;
-    $res->code(
-        $self->_translate_error_code_to_status(
-            ref $rpc_response eq 'HASH' && exists $rpc_response->{error}
-            ? $rpc_response->{error}->{code}
-            : q{}
-        )
-    );
-    $res->headers->content_type('application/json-rpc');
-    return $self->render(json => $rpc_response);
+
+    # Generic handler for responses
+    my $handler = sub {
+        my $rpc_response = shift;
+        my $res = $self->tx->res;
+        $res->code(
+            $self->_translate_error_code_to_status(
+                ref $rpc_response eq 'HASH' && exists $rpc_response->{error}
+                ? $rpc_response->{error}->{code}
+                : q{}
+            )
+        );
+        $res->headers->content_type('application/json-rpc');
+        return $self->render(json => $rpc_response);
+    };
+
+    if(Scalar::Util::blessed($rpc_response) && $rpc_response->isa('Future')) {
+        Variable::Disposition::retain_future(
+            $rpc_response->on_done(sub {
+                # Successful response, return it 
+                $handler->(shift)
+            })->on_fail(sub {
+                # Failure response - same handler can deal with these
+                $handler->(shift)
+            })
+        );
+        return $self->render_later;
+    } else {
+        return $handler->($rpc_response)
+    }
 }
 
 sub _acquire_methods {
