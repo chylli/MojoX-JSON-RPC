@@ -16,6 +16,8 @@ package MyService;
 
 use Mojo::Base 'MojoX::JSON::RPC::Service';
 use Future;
+use Future::Mojo;
+use Mojo::IOLoop::ReadWriteFork;
 
 sub multiply {
     my ( $self, @params ) = @_;
@@ -80,9 +82,50 @@ sub future_fail {
   return Future->new->fail('future fail');
 }
 
+sub bash_echo {
+      my ( $self, @params ) = (@_, '');
+
+      my $future = Future::Mojo->new;
+      my $fork   = Mojo::IOLoop::ReadWriteFork->new;
+      my $output = '';
+      my $n      = 0;
+      my $closed = 0;
+      warn "bash_echo called";
+      $fork->on(
+                error => sub {
+                  my ($fork, $error) = @_;
+                  $future->fail("bash fail error $error");
+                }
+               );
+      $fork->on(
+                close => sub {
+                  my ($fork, $exit_value, $signal) = @_;
+                  warn "close";
+                  if ($exit_value){
+                    $future->fail("Exit code $exit_value", fork => exitcode => $exit_value);
+                  }
+                  else {
+                    $future->done($output);
+                  }
+                }
+               );
+      $fork->on(
+                read => sub {
+                  my ($fork, $buffer, $writer) = @_;
+                  $output .= $buffer;
+                  warn "reading";
+                }
+               );
+
+      $fork->start(program => 'bash', program_args => [-c => "echo $params[0] foo bar baz"], conduit => 'pty',);
+      Mojo::IOLoop->start  unless Mojo::IOLoop->is_running;
+      return $future;
+}
+
 __PACKAGE__->register_rpc_method_names(
     'multiply', 'echo',      'echo_key', 'register',
-    '_rpcs',    'substract', 'update',   'foobar', 'future_done', 'future_fail'
+    '_rpcs',    'substract', 'update',   'foobar',
+    'future_done', 'future_fail', 'bash_echo',
 );
 
 #-------------------------------------------------------------------
@@ -189,7 +232,7 @@ package main;
 
 use TestUts;
 
-use Test::More tests => 38;
+use Test::More tests => 39;
 use Test::Mojo;
 
 use_ok 'MojoX::JSON::RPC::Service';
@@ -360,6 +403,19 @@ TestUts::test_call(
                        id     => 1
                    },
                    'future'
+                  );
+
+TestUts::test_call(
+                   $client,
+                   '/jsonrpc2',
+                   {   id     => 1,
+                       method => 'bash_echo',
+                       params => ["hello"],
+                   },
+                   {   result => 'bash_echo',
+                       id     => 1
+                   },
+                   'bash_echo'
                   );
 
 
