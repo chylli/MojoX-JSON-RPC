@@ -70,14 +70,19 @@ sub foobar {
     return;
 }
 
-sub future {
+sub future_done {
     my ($self) = @_;
-    return Future::Mojo->new->done('future');
+    return Future::Mojo->new->done('future done');
+}
+
+sub future_fail {
+  my ($self) = @_;
+  return Future::Mojo->new->fail('future fail');
 }
 
 __PACKAGE__->register_rpc_method_names(
     'multiply', 'echo',      'echo_key', 'register',
-    '_rpcs',    'substract', 'update',   'foobar', 'future'
+    '_rpcs',    'substract', 'update',   'foobar', 'future_done', 'future_fail'
 );
 
 #-------------------------------------------------------------------
@@ -184,7 +189,7 @@ package main;
 
 use TestUts;
 
-use Test::More tests => 37;
+use Test::More tests => 38;
 use Test::Mojo;
 
 use_ok 'MojoX::JSON::RPC::Service';
@@ -336,9 +341,22 @@ TestUts::test_call(
                    $client,
                    '/jsonrpc2',
                    {   id     => 1,
-                       method => 'future',
+                       method => 'future_done',
                    },
-                   {   result => 'future',
+                   {   result => 'future done',
+                       id     => 1
+                   },
+                   'future'
+                  );
+
+# test Future
+TestUts::test_call(
+                   $client,
+                   '/jsonrpc2',
+                   {   id     => 1,
+                       method => 'future_fail',
+                   },
+                   {   result => 'future fail',
                        id     => 1
                    },
                    'future'
