@@ -15,7 +15,7 @@ use lib join '/', File::Spec->splitdir( dirname(__FILE__) ), '..', 'lib';
 package MyService;
 
 use Mojo::Base 'MojoX::JSON::RPC::Service';
-use Future::Mojo;
+use Future;
 
 sub multiply {
     my ( $self, @params ) = @_;
@@ -72,12 +72,12 @@ sub foobar {
 
 sub future_done {
     my ($self) = @_;
-    return Future::Mojo->new->done('future done');
+    return Future->new->done('future done');
 }
 
 sub future_fail {
   my ($self) = @_;
-  return Future::Mojo->new->fail('future fail');
+  return Future->new->fail('future fail');
 }
 
 __PACKAGE__->register_rpc_method_names(
