@@ -5,7 +5,7 @@ use Mojo::JSON qw(decode_json);
 use MojoX::JSON::RPC::Dispatcher::Method;
 use MojoX::JSON::RPC::Service;
 
-use Scalar::Util qw();
+use Scalar::Util qw(blessed);
 use Variable::Disposition qw();
 
 # process JSON-RPC call
@@ -16,8 +16,7 @@ sub call {
     if ( !$rpc_response ) {    # is notification
         $self->tx->res->code(204);
         return $self->rendered;
-    }
-
+      }
     # Generic handler for responses
     my $handler = sub {
         my $rpc_response = shift;
@@ -33,14 +32,17 @@ sub call {
         return $self->render(json => $rpc_response);
     };
 
-    if(Scalar::Util::blessed($rpc_response) && $rpc_response->isa('Future')) {
+    my $result = ref $rpc_response eq 'HASH' && exists $rpc_response->{result} ? $rpc_response->{result} : undef;
+    if(blessed($result) && $result->isa('Future')) {
         Variable::Disposition::retain_future(
-            $rpc_response->on_done(sub {
-                # Successful response, return it 
-                $handler->(shift)
+            $result->on_done(sub {
+                # Successful response, return it
+                $rpc_response->{result} = shift;
+                $handler->($rpc_response);
             })->on_fail(sub {
                 # Failure response - same handler can deal with these
-                $handler->(shift)
+                $rpc_response->{result} = shift;
+                $handler->($rpc_response);
             })
         );
         return $self->render_later;

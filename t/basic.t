@@ -15,6 +15,7 @@ use lib join '/', File::Spec->splitdir( dirname(__FILE__) ), '..', 'lib';
 package MyService;
 
 use Mojo::Base 'MojoX::JSON::RPC::Service';
+use Future::Mojo;
 
 sub multiply {
     my ( $self, @params ) = @_;
@@ -69,9 +70,14 @@ sub foobar {
     return;
 }
 
+sub future {
+    my ($self) = @_;
+    return Future::Mojo->new->done('future');
+}
+
 __PACKAGE__->register_rpc_method_names(
     'multiply', 'echo',      'echo_key', 'register',
-    '_rpcs',    'substract', 'update',   'foobar'
+    '_rpcs',    'substract', 'update',   'foobar', 'future'
 );
 
 #-------------------------------------------------------------------
@@ -178,7 +184,7 @@ package main;
 
 use TestUts;
 
-use Test::More tests => 36;
+use Test::More tests => 37;
 use Test::Mojo;
 
 use_ok 'MojoX::JSON::RPC::Service';
@@ -324,6 +330,21 @@ TestUts::test_call(
     },
     'GET no method'
 );
+
+# test Future
+TestUts::test_call(
+                   $client,
+                   '/jsonrpc2',
+                   {   id     => 1,
+                       method => 'future',
+                   },
+                   {   result => 'future',
+                       id     => 1
+                   },
+                   'future'
+                  );
+
+
 
 # Test client proxy
 
