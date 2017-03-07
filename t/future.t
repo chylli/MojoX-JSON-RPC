@@ -5,37 +5,65 @@ use warnings;
 use File::Basename 'dirname';
 use File::Spec;
 
+use Test::More;
+
+use MojoX::JSON::RPC::Service;
+use MojoX::JSON::RPC::Client;
+
 use lib join '/', File::Spec->splitdir( dirname(__FILE__) ), 'lib';
 use lib join '/', File::Spec->splitdir( dirname(__FILE__) ), '..', 'lib';
 
+eval {
+    require Future;
+    require Future::Mojo;
+} or plan skip_all => 'needs Future and Future::Mojo modules';
+
 #-------------------------------------------------------------------
 
+{
 # Define custom service
 package MyService;
 
 use Mojo::Base 'MojoX::JSON::RPC::Service';
-use Future;
-use Future::Mojo;
-use Mojo::IOLoop::ReadWriteFork;
 
-sub echo {
-  my ( $self, @params ) = @_;
-
-  return $params[0];
+sub provide {
+    my ($name, $code) = @_;
+    Mojo::Util::monkey_patch(__PACKAGE__, $name => $code);
+    __PACKAGE__->register_rpc_method_names($name);
 }
 
+provide echo => sub {
+    my ( $self, @params ) = @_;
 
-sub future_done {
+    return $params[0];
+};
+
+
+provide immediate_success => sub {
     my ($self) = @_;
-    return Future->new->done('future done');
-}
+    return Future->done('future done');
+};
 
-sub future_fail {
+provide immediate_fail => sub {
   my ($self) = @_;
-  return Future->new->fail('future fail');
-}
+  return Future->fail('failure message', 'rpc');
+};
 
-sub bash_echo {
+provide deferred_fail => sub {
+  my ($self) = @_;
+    my $f = Future::Mojo->new;
+    Mojo::IOLoop->timer(0.5 => sub { $f->fail('deferred failure') });
+    return $f;
+};
+
+provide deferred_success => sub {
+    my ($self) = @_;
+    my $f = Future::Mojo->new;
+    Mojo::IOLoop->timer(0.5 => sub { $f->done('deferred ok') });
+    return $f;
+};
+
+provide bash_echo => sub {
       my ( $self, @params ) = (@_, '');
 
       my $future = Future::Mojo->new;
@@ -74,14 +102,14 @@ sub bash_echo {
       $fork->start(program => 'bash', program_args => [-c => "echo $params[0] foo bar baz"], conduit => 'pty',);
       #$fork->start(program => '/bin/touch', program_args => ["/tmp/test.log"]);
       return $future;
-}
+};
 
-__PACKAGE__->register_rpc_method_names(
-    'future_done', 'future_fail', 'bash_echo','echo'
-);
+
+}
 
 #-------------------------------------------------------------------
 
+{
 # Mojolicious app for testing
 package MojoxJsonRpc;
 
@@ -101,116 +129,118 @@ sub startup {
                             }
                );
 }
+
+}
+
 #-------------------------------------------------------------------
 
 # Back to tests
-  package main;
+use TestUts;
 
-  use TestUts;
-
-  use Test::More tests => 5;
-  use Test::Mojo;
-
-use_ok 'MojoX::JSON::RPC::Service';
-use_ok 'MojoX::JSON::RPC::Client';
+use Test::Mojo;
 
 my $t = Test::Mojo->new('MojoxJsonRpc');
 my $client = MojoX::JSON::RPC::Client->new( ua => $t->ua );
 
-
+note 'simple echo';
 TestUts::test_call(
-                   $client,
-                   '/jsonrpc',
-                   {   id     => 2,
-                       method => 'echo',
-                       params => ['HEEEEEEEEEEEEEEEEELLLLLLLLLLLLLLLOOOOOOOOOOO!']
-                   },
-                   {   result => 'HEEEEEEEEEEEEEEEEELLLLLLLLLLLLLLLOOOOOOOOOOO!',
-                       id     => 2
-                   },
-                   'echo 1'
-                  );
-
+    $client,
+    '/jsonrpc',
+    {   id     => 2,
+        method => 'echo',
+        params => ['HEEEEEEEEEEEEEEEEELLLLLLLLLLLLLLLOOOOOOOOOOO!']
+    },
+    {   result => 'HEEEEEEEEEEEEEEEEELLLLLLLLLLLLLLLOOOOOOOOOOO!',
+        id     => 2
+    },
+    'echo 1'
+);
 
 # test Future done
-TestUts::test_call(
-                   $client,
-                   '/jsonrpc',
-                   {   id     => 1,
-                       method => 'future_done',
-                   },
-                   {   result => 'future done',
-                       id     => 1
-                   },
-                   'future'
-                  );
 
-# test Future fail
+note 'immediate success';
 TestUts::test_call(
-                   $client,
-                   '/jsonrpc',
-                   {   id     => 1,
-                       method => 'future_fail',
-                   },
-                   {   result => 'future fail',
-                       id     => 1
-                   },
-                   'future'
-                  );
+    $client,
+    '/jsonrpc',
+    {   id     => 1,
+        method => 'immediate_success',
+    },
+    {   result => 'future done',
+        id     => 1
+    },
+    'future'
+);
+
+note 'deferred success, should take half a second';
+TestUts::test_call(
+    $client,
+    '/jsonrpc',
+    {   id     => 1,
+        method => 'deferred_success',
+    },
+    {   result => 'deferred ok',
+        id     => 1
+    },
+    'deferred success future'
+);
+
+TestUts::test_call(
+    $client,
+    '/jsonrpc',
+    {   id     => 1,
+        method => 'immediate_fail',
+    },
+    {   error  => { message => 'failure message', code => '', data => '' },
+        id     => 1
+    },
+    'immediate_fail'
+);
+
+TestUts::test_call(
+    $client,
+    '/jsonrpc',
+    {   id     => 1,
+        method => 'deferred_fail',
+    },
+    {   error  => { message => 'deferred failure', code => '', data => '' },
+        id     => 1
+    },
+    'deferred_fail'
+);
 
 my $in_string = "hello";
 my $out_string;
 
-$client->call(
-              '/jsonrpc',
-              {   id     => 2,
-                  method => 'bash_echo',
-                  params => [ $in_string ]
-              },
-              sub {
-                Mojo::IOLoop->stop;
-                my $res = pop;
-                $out_string = $res->result;
-              }
-             );
-
-Mojo::IOLoop->start unless Mojo::IOLoop->is_running;
-
-is($out_string, $in_string, 'test future');
+#$client->call(
+#              '/jsonrpc',
+#              {   id     => 2,
+#                  method => 'bash_echo',
+#                  params => [ $in_string ]
+#              },
+#              sub {
+#                Mojo::IOLoop->stop;
+#                my $res = pop;
+#                $out_string = $res->result;
+#              }
+#             );
+#
+#Mojo::IOLoop->start unless Mojo::IOLoop->is_running;
+#
+#is($out_string, $in_string, 'test future');
 
 
 TestUts::test_call(
-                   $client,
-                   '/jsonrpc',
-                   {   id     => 2,
-                       method => 'echo',
-                       params => ['HEEEEEEEEEEEEEEEEELLLLLLLLLLLLLLLOOOOOOOOOOO!']
-                   },
-                   {   result => 'HEEEEEEEEEEEEEEEEELLLLLLLLLLLLLLLOOOOOOOOOOO!',
-                       id     => 2
-                   },
-                   'echo 2'
-                  );
+    $client,
+    '/jsonrpc',
+    {   id     => 2,
+        method => 'echo',
+        params => ['HEEEEEEEEEEEEEEEEELLLLLLLLLLLLLLLOOOOOOOOOOO!']
+    },
+    {   result => 'HEEEEEEEEEEEEEEEEELLLLLLLLLLLLLLLOOOOOOOOOOO!',
+        id     => 2
+    },
+    'echo 2'
+);
 
+done_testing;
 
-
-#warn "running ? " . Mojo::IOLoop->is_running;
-#Mojo::IOLoop->start unless Mojo::IOLoop->is_running;
-#warn "running ? " . Mojo::IOLoop->is_running;
-
-
-# test future ioloop
-#TestUts::test_call(
-#                   $client,
-#                   '/jsonrpc',
-#                   {   id     => 1,
-#                       method => 'bash_echo',
-#                       params => ["hello"],
-#                   },
-#                   {   result => 'bash_echo',
-#                       id     => 1
-#                   },
-#                   'bash_echo'
-#                  );
-#
-#
