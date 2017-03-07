@@ -132,33 +132,68 @@ TestUts::test_call(
                   );
 
 
-## test Future done
-#TestUts::test_call(
-#                   $client,
-#                   '/jsonrpc',
-#                   {   id     => 1,
-#                       method => 'future_done',
-#                   },
-#                   {   result => 'future done',
-#                       id     => 1
-#                   },
-#                   'future'
-#                  );
-#
-## test Future fail
-#TestUts::test_call(
-#                   $client,
-#                   '/jsonrpc',
-#                   {   id     => 1,
-#                       method => 'future_fail',
-#                   },
-#                   {   result => 'future fail',
-#                       id     => 1
-#                   },
-#                   'future'
-#                  );
-#
-#
+# test Future done
+TestUts::test_call(
+                   $client,
+                   '/jsonrpc',
+                   {   id     => 1,
+                       method => 'future_done',
+                   },
+                   {   result => 'future done',
+                       id     => 1
+                   },
+                   'future'
+                  );
+
+# test Future fail
+TestUts::test_call(
+                   $client,
+                   '/jsonrpc',
+                   {   id     => 1,
+                       method => 'future_fail',
+                   },
+                   {   result => 'future fail',
+                       id     => 1
+                   },
+                   'future'
+                  );
+
+my $in_string = "hello";
+my $out_string;
+
+$client->call(
+              '/jsonrpc',
+              {   id     => 2,
+                  method => 'bash_echo',
+                  params => [ $in_string ]
+              },
+              sub {
+                Mojo::IOLoop->stop;
+                my $res = pop;
+                $out_string = $res->result;
+              }
+             );
+
+Mojo::IOLoop->start unless Mojo::IOLoop->is_running;
+
+is($out_string, $in_string, 'test future');
+
+
+TestUts::test_call(
+                   $client,
+                   '/jsonrpc',
+                   {   id     => 2,
+                       method => 'echo',
+                       params => ['HEEEEEEEEEEEEEEEEELLLLLLLLLLLLLLLOOOOOOOOOOO!']
+                   },
+                   {   result => 'HEEEEEEEEEEEEEEEEELLLLLLLLLLLLLLLOOOOOOOOOOO!',
+                       id     => 2
+                   },
+                   'echo 2'
+                  );
+
+
+
 #warn "running ? " . Mojo::IOLoop->is_running;
 #Mojo::IOLoop->start unless Mojo::IOLoop->is_running;
 #warn "running ? " . Mojo::IOLoop->is_running;
