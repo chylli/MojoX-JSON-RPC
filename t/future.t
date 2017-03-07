@@ -100,7 +100,7 @@ sub startup {
 
   use TestUts;
 
-  use Test::More tests => 39;
+  use Test::More tests => 5;
   use Test::Mojo;
 
 use_ok 'MojoX::JSON::RPC::Service';
