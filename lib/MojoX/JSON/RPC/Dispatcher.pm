@@ -41,9 +41,12 @@ sub call {
                 $handler->($rpc_response);
             })->on_fail(sub {
                 # Failure response - same handler can deal with these
-                $rpc_response->{result} = shift;
+                $rpc_response->{error}{message} = shift;
+                $rpc_response->{error}{code} ||= '';
+                $rpc_response->{error}{data} ||= '';
+                delete $rpc_response->{result};
                 $handler->($rpc_response);
-            })
+            })->else_done
         );
         return $self->render_later;
     } else {
