@@ -45,12 +45,12 @@ sub call {
                 $rpc_response->{error}{code} ||= '';
                 $rpc_response->{error}{data} ||= '';
                 delete $rpc_response->{result};
-                $self->response_handler($rpc_response);
+                $self->_response_handler($rpc_response);
             })->else_done
         );
         return $self->render_later;
     } else {
-        return $self->response_handler($rpc_response)
+        return $self->_response_handler($rpc_response)
     }
 }
 
