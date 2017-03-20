@@ -8,6 +8,20 @@ use MojoX::JSON::RPC::Service;
 use Scalar::Util qw(blessed);
 use Variable::Disposition qw();
 
+# Generic handler for responses
+sub _response_handler {
+    my ($self, $rpc_response) = @_;
+    my $res = $self->tx->res;
+    $res->code(
+        $self->_translate_error_code_to_status(
+            ref $rpc_response eq 'HASH' && exists $rpc_response->{error}
+            ? $rpc_response->{error}->{code}
+            : q{}
+        ));
+    $res->headers->content_type('application/json-rpc');
+    return $self->render(json => $rpc_response);
+}
+
 # process JSON-RPC call
 sub call {
     my ($self) = @_;
@@ -17,20 +31,6 @@ sub call {
         $self->tx->res->code(204);
         return $self->rendered;
       }
-    # Generic handler for responses
-    my $handler = sub {
-        my $rpc_response = shift;
-        my $res = $self->tx->res;
-        $res->code(
-            $self->_translate_error_code_to_status(
-                ref $rpc_response eq 'HASH' && exists $rpc_response->{error}
-                ? $rpc_response->{error}->{code}
-                : q{}
-            )
-        );
-        $res->headers->content_type('application/json-rpc');
-        return $self->render(json => $rpc_response);
-    };
 
     my $result = ref $rpc_response eq 'HASH' && exists $rpc_response->{result} ? $rpc_response->{result} : undef;
     if(blessed($result) && $result->isa('Future')) {
@@ -38,19 +38,19 @@ sub call {
             $result->on_done(sub {
                 # Successful response, return it
                 $rpc_response->{result} = shift;
-                $handler->($rpc_response);
+                $self->_response_handler($rpc_response);
             })->on_fail(sub {
                 # Failure response - same handler can deal with these
                 $rpc_response->{error}{message} = shift;
                 $rpc_response->{error}{code} ||= '';
                 $rpc_response->{error}{data} ||= '';
                 delete $rpc_response->{result};
-                $handler->($rpc_response);
+                $self->response_handler($rpc_response);
             })->else_done
         );
         return $self->render_later;
     } else {
-        return $handler->($rpc_response)
+        return $self->response_handler($rpc_response)
     }
 }
 
