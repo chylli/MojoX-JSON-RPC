@@ -6,6 +6,7 @@ use File::Basename 'dirname';
 use File::Spec;
 
 use Test::More;
+use Time::HiRes qw(gettimeofday tv_interval);
 
 use MojoX::JSON::RPC::Service;
 use MojoX::JSON::RPC::Client;
@@ -128,6 +129,7 @@ TestUts::test_call(
 );
 
 note 'deferred success, should take half a second';
+my $t1 = [gettimeofday];
 TestUts::test_call(
     $client,
     '/jsonrpc',
@@ -141,6 +143,7 @@ TestUts::test_call(
     },
     'deferred success future'
 );
+ok(tv_interval($t1) > 0.5, 'deferred_success rpc took 0.5 seconds');
 
 TestUts::test_call(
     $client,
@@ -160,6 +163,7 @@ TestUts::test_call(
     'immediate_fail'
 );
 
+$t1 = [gettimeofday];
 TestUts::test_call(
     $client,
     '/jsonrpc',
@@ -177,7 +181,9 @@ TestUts::test_call(
     },
     'deferred_fail'
 );
+ok(tv_interval($t1) > 0.5, 'deferred_fail rpc took 0.5 seconds');
 
+# Test common RPC without Future can coexist with Future RPC.
 TestUts::test_call(
     $client,
     '/jsonrpc',
