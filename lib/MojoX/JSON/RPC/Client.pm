@@ -108,7 +108,7 @@ sub _process_result {
     }
 
     # Check if RPC call is succesfull
-    if ( !( $tx_res->is_success || $tx_res->code == 400 ) )
+    if ( !( $tx_res->is_success || $tx_res->is_error ) )
     {
         return;
     }
