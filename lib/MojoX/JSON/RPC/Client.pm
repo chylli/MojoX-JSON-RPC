@@ -1,7 +1,8 @@
 package MojoX::JSON::RPC::Client;
 
 use Mojo::Base -base;
-use Mojo::JSON qw(encode_json decode_json);
+use Encode;
+use JSON::MaybeXS;
 use Mojo::UserAgent;
 
 has id           => undef;
@@ -10,6 +11,7 @@ has version      => '2.0';
 has content_type => 'application/json';
 has tx           => undef;                          # latest transaction
 
+my $json = JSON::MaybeXS->new;
 sub call {
     my ( $self, $uri, $body, $callback ) = @_;
 
@@ -18,7 +20,7 @@ sub call {
         foreach my $o ( ref $body eq 'HASH' ? $body : @{$body} ) {
             $o->{version} ||= $self->version;
         }
-        $body = encode_json($body);
+        $body = Encode::encode_utf8($json->encode($body));
     }
     else {
         $body ||= q{};
@@ -116,7 +118,7 @@ sub _process_result {
     my $decode_error;
     my $rpc_res;
     
-    eval{ $rpc_res = decode_json( $tx_res->body || '{}' ); 1; } or $decode_error = $@;
+    eval{ $rpc_res = $json->decode( Encode::decode_utf8($tx_res->body || '{}') ); 1; } or $decode_error = $@;
     if ( $decode_error && $log ) {    # Server result cannot be parsed!
         $log->error( 'Cannot parse rpc result: ' . $decode_error );
         return;
